@@ -1,0 +1,119 @@
+=== RAG Medical Assesment bundle ===
+
+--- requirements.txt ---
+sentence-transformers>=2.2.2
+faiss-cpu>=1.7.4
+transformers>=4.30.0
+openai>=1.0.0
+langchain>=0.1.0
+tqdm
+numpy
+scikit-learn
+pandas
+
+--- clinic_faqs.csv ---
+id,title,content,tags
+1,Location and directions,"Our clinic is located at 123 Health St., Suite 200. We are two blocks east of Central Park. Use the main entrance on Health St.; the clinic is on the 2nd floor. For public transport, take Bus 12 or Metro Line A to Health Station and walk east 300m.",location,directions
+2,Parking information,"We offer limited on-site parking (10 spaces) on a first-come, first-served basis. Additional street parking is available on Health Ave (metered). If you need accessible parking, please call ahead and we'll reserve a spot if possible.",parking
+3,Hours of operation,"Our hours are Monday–Friday: 8:00 AM – 6:00 PM; Saturday: 9:00 AM – 1:00 PM; Sunday: Closed. Holiday hours vary—check our website or call the clinic for holiday schedules.",hours
+4,Accepted insurance providers,"We accept the following insurance providers: HealthPlus, MediCare Advantage, CareShield, and BlueCare. If you're unsure whether we accept your plan, please bring your insurance card and we will verify coverage.",insurance,billing
+5,Payment methods,"We accept cash, credit/debit cards (Visa, MasterCard, AmEx), and most HSA/FSA cards. For any balances after insurance, payment is due within 30 days unless other arrangements are made.",payment,billing
+6,Billing policies,"Co-pays are collected at the time of service. For non-covered services, patients will be billed and payment arrangements can be made with our billing office. Questions about bills should be directed to billing@clinic.org or call (555) 123-4567.",billing,policies
+7,Required documents,"Please bring a photo ID, your insurance card, and a list of current medications. If you have prior medical records relevant to your visit, bring copies or arrange for a records transfer.",visit preparation,documents
+8,First visit procedures,"On your first visit, you'll complete intake forms, provide medical history, and have an initial assessment with a provider. Allow 60–90 minutes for your first appointment.",visit preparation,first_visit
+9,What to bring,"Bring your ID, insurance card, referral (if required by your insurer), medication list, and any relevant medical records or imaging studies.",visit preparation,what_to_bring
+10,Cancellation policy,"Please notify us at least 24 hours in advance to cancel or reschedule appointments. Missed appointments or late cancellations may incur a fee.",policies,cancellation
+11,Late arrival policy,"If you arrive more than 15 minutes late, we may reschedule your appointment to avoid delays for other patients. Please call ahead if you expect to be late.",policies,late_arrival
+12,COVID-19 protocols,"We follow current public health guidelines. Masking requirements vary—check the latest policy before arrival. If you have COVID symptoms, please call to reschedule or request a telehealth visit.",policies,covid
+13,Seamless context switching,"When a user asks an FAQ during booking, answer the FAQ and then return them to the booking flow; if they explicitly request scheduling, transition into the scheduler. Maintain conversational state across multiple FAQs.",system,context
+
+--- ingest.py ---
+"""
+Ingest script for clinic FAQ knowledge base.
+- Reads `data/clinic_faqs.csv` (or local copy)
+- Chunks document text, computes embeddings, and stores a FAISS index + metadata
+- Output: `faiss_index.pkl` (index saved via faiss.write_index) and `meta.pkl` (list of dicts)
+
+Usage:
+    python ingest.py --csv clinic_faqs.csv --index-path faiss.index --meta-path meta.pkl
+
+This script uses sentence-transformers for embeddings.
+"""
+import os
+import argparse
+import pickle
+from tqdm import tqdm
+
+import numpy as np
+import pandas as pd
+
+try:
+    from sentence_transformers import SentenceTransformer
+    import faiss
+except Exception as e:
+    print("Important: required packages missing. Install with: pip install -r requirements.txt")
+    raise
+
+
+def chunk_text(text, chunk_size=400, overlap=50):
+    """Simple character-based chunker."""
+    if not text:
+        return []
+    chunks = []
+    start = 0
+    length = len(text)
+    while start < length:
+        end = min(start + chunk_size, length)
+        chunks.append(text[start:end])
+        start = end - overlap
+        if start < 0:
+            start = 0
+        if start >= length:
+            break
+    return chunks
+
+
+def build_index(csv_path, index_path, meta_path, model_name="all-MiniLM-L6-v2"):
+    df = pd.read_csv(csv_path)
+    texts = []
+    metadatas = []
+    ids = []
+    for _, row in df.iterrows():
+        doc_id = row["id"]
+        title = str(row.get("title", ""))
+        content = str(row.get("content", ""))
+        full = f"{title}\n\n{content}"
+        chunks = chunk_text(full)
+        for i, c in enumerate(chunks):
+            texts.append(c)
+            metadatas.append({"source_id": int(doc_id), "title": title, "chunk_index": i})
+            ids.append(f"{doc_id}_{i}")
+
+    print(f"Computing embeddings for {len(texts)} chunks using model {model_name}...")
+    embedder = SentenceTransformer(model_name)
+    embeddings = embedder.encode(texts, show_progress_bar=True, convert_to_numpy=True)
+
+    # Normalize for cosine similarity
+    faiss.normalize_L2(embeddings)
+
+    dim = embeddings.shape[1]
+    index = faiss.IndexFlatIP(dim)  # inner product on normalized vectors = cosine similarity
+    index.add(embeddings)
+
+    # Save index and metadata
+    os.makedirs(os.path.dirname(index_path) or '.', exist_ok=True)
+    faiss.write_index(index, index_path)
+    with open(meta_path, "wb") as f:
+        pickle.dump({"metadatas": metadatas, "texts": texts, "ids": ids, "model_name": model_name}, f)
+
+    print(f"Saved FAISS index to {index_path} and metadata to {meta_path}.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--csv", default="clinic_faqs.csv")
+    parser.add_argument("--index-path", default="faiss.index")
+    parser.add_argument("--meta-path", default="meta.pkl")
+    parser.add_argument("--model", default="all-MiniLM-L6-v2")
+    args = parser.parse_args()
+    build_index(args.csv, args.index_path, args.meta_path, model_name=args.model)

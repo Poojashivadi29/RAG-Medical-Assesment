@@ -1,0 +1,16 @@
+sentence-transformers>=2.2.2
+faiss-cpu>=1.7.4
+transformers>=4.30.0
+openai>=1.0.0
+langchain>=0.1.0
+tqdm
+numpy
+scikit-learn
+pandas
+# Notes:
+# Install into a virtual environment:
+#   python -m venv .venv
+#   .\.venv\Scripts\Activate.ps1
+#   pip install -r requirements.txt
+# If faiss-cpu fails on Windows, use the prebuilt wheel appropriate for your Python version
+# or consider using an alternative vector store such as Chroma (recommended on Windows).
