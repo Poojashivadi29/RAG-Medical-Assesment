@@ -1,0 +1,20 @@
+.venv/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pkl
+*.index
+faiss.index
+meta.pkl
+RAG Medical Assesment/faiss.index
+RAG Medical Assesment/meta.pkl
+.env
+.env.*
+.DS_Store
+.vscode/
+.idea/
+*.egg-info/
+build/
+dist/
+*.log
