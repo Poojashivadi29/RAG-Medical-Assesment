@@ -1,0 +1,5 @@
+openai>=2.0.0
+chromadb>=0.3.28
+pandas
+numpy
+tqdm

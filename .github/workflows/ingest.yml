@@ -1,0 +1,36 @@
+name: Ingest RAG data
+
+on:
+  push:
+    paths:
+      - 'RAG Medical Assesment/**'
+
+jobs:
+  build-and-ingest:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # Use a CI-friendly requirements file that uses OpenAI embeddings + Chroma
+        pip install -r "RAG Medical Assesment/requirements-ci.txt"
+
+    - name: Run ingestion
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        python "RAG Medical Assesment/ingest.py" --csv "RAG Medical Assesment/clinic_faqs.csv" --meta-path "RAG Medical Assesment/meta.pkl"
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: rag-meta
+        path: |
+          RAG Medical Assesment/meta.pkl
